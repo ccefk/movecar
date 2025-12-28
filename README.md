@@ -2,6 +2,12 @@
 
 基于 Cloudflare Workers 的智能挪车通知系统，扫码即可通知车主，保护双方隐私。
 
+## 界面预览
+
+| 请求者页面 | 车主页面 |
+|:---:|:---:|
+| [🔗 在线预览](https://htmlpreview.github.io/?https://github.com/lesnolie/movecar/blob/main/preview-requester.html) | [🔗 在线预览](https://htmlpreview.github.io/?https://github.com/lesnolie/movecar/blob/main/preview-owner.html) |
+
 ## 为什么需要它？
 
 - 🚗 **被堵车却找不到车主** - 干着急没办法
