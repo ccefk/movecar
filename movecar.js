@@ -79,11 +79,12 @@ function transformLng(x, y) {
   ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
   return ret;
 }
-function generateMapUrls(lat, lng) {
+function generateMapUrls(lat, lng, name) {
   const gcj = wgs84ToGcj02(lat, lng);
+  const encodedName = encodeURIComponent(name);
   return {
-    amapUrl: "https://uri.amap.com/marker?position=" + gcj.lng + "," + gcj.lat + "&name=扫码者位置",
-    appleUrl: "https://maps.apple.com/?ll=" + gcj.lat + "," + gcj.lng + "&q=扫码者位置"
+    amapUrl: "https://uri.amap.com/marker?position=" + gcj.lng + "," + gcj.lat + "&name=" + encodedName,
+    appleUrl: "https://maps.apple.com/?ll=" + gcj.lat + "," + gcj.lng + "&q=" + encodedName
   };
 }
 
@@ -101,21 +102,31 @@ async function handleNotify(request, url, userKey) {
     const message = body.message || '车旁有人等待';
     const location = body.location || null;
     const delayed = body.delayed || false;
+    const lang = body.lang || 'zh-CN';
 
     // 获取配置
     const ppToken = getUserConfig(userKey, 'PUSHPLUS_TOKEN');
     const barkUrl = getUserConfig(userKey, 'BARK_URL');
+    const tgToken = getUserConfig(userKey, 'TG_BOT_TOKEN');
+    const tgChatId = getUserConfig(userKey, 'TG_CHAT_ID');
     const carTitle = getUserConfig(userKey, 'CAR_TITLE') || '车主';
 
     const baseDomain = (typeof EXTERNAL_URL !== 'undefined' && EXTERNAL_URL) ? EXTERNAL_URL.replace(/\/$/, "") : url.origin;
     const confirmUrl = baseDomain + "/owner-confirm?u=" + userKey;
 
-    let notifyText = "🚗 挪车请求【" + carTitle + "】\\n💬 留言: " + message;
+    const backendI18n = {
+      'zh-CN': { req: '挪车请求', msg: '留言', loc: '已附带对方位置', confirm: '点击确认前往', requesterName: '扫码者位置' },
+      'zh-TW': { req: '挪車請求', msg: '留言', loc: '已附帶對方位置', confirm: '點擊確認前往', requesterName: '掃碼者位置' },
+      'en': { req: 'Move Car Request', msg: 'Message', loc: 'Location attached', confirm: 'Click to confirm', requesterName: 'Requester Location' }
+    };
+    const t = backendI18n[lang] || backendI18n['zh-CN'];
+
+    let notifyText = "🚗 " + t.req + "【" + carTitle + "】\\n💬 " + t.msg + ": " + message;
     
     // 隔离存储位置
     if (location && location.lat) {
-      const maps = generateMapUrls(location.lat, location.lng);
-      notifyText += "\\n📍 已附带对方位置";
+      const maps = generateMapUrls(location.lat, location.lng, t.requesterName);
+      notifyText += "\\n📍 " + t.loc;
       await MOVE_CAR_STATUS.put("loc_" + userKey, JSON.stringify({ ...location, ...maps }), { expirationTtl: CONFIG.KV_TTL });
     }
 
@@ -129,16 +140,25 @@ async function handleNotify(request, url, userKey) {
     if (delayed) await new Promise(r => setTimeout(r, 30000));
 
     const tasks = [];
+    const htmlMsg = notifyText.replace(/\\n/g, '<br>') + '<br><br><a href="' + confirmUrl + '" style="font-weight:bold;color:#0093E9;font-size:18px;">【' + t.confirm + '】</a>';
+
     if (ppToken) {
-      const htmlMsg = notifyText.replace(/\\n/g, '<br>') + '<br><br><a href="' + confirmUrl + '" style="font-weight:bold;color:#0093E9;font-size:18px;">【点击确认前往】</a>';
       tasks.push(fetch('http://www.pushplus.plus/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: ppToken, title: "🚗 挪车请求：" + carTitle, content: htmlMsg, template: 'html' })
+        body: JSON.stringify({ token: ppToken, title: "🚗 " + t.req + "：" + carTitle, content: htmlMsg, template: 'html' })
       }));
     }
     if (barkUrl) {
-      tasks.push(fetch(barkUrl + "/" + encodeURIComponent('挪车请求') + "/" + encodeURIComponent(notifyText) + "?url=" + encodeURIComponent(confirmUrl)));
+      tasks.push(fetch(barkUrl + "/" + encodeURIComponent(t.req) + "/" + encodeURIComponent(notifyText) + "?url=" + encodeURIComponent(confirmUrl)));
+    }
+    if (tgToken && tgChatId) {
+      const tgMsg = "🚗 <b>" + t.req + "：" + carTitle + "</b>\n💬 " + t.msg + ": " + message + (location ? "\n📍 " + t.loc : "") + "\n<a href=\"" + confirmUrl + "\">【" + t.confirm + "】</a>";
+      tasks.push(fetch("https://api.telegram.org/bot" + tgToken + "/sendMessage", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: tgChatId, text: tgMsg, parse_mode: 'HTML', disable_web_page_preview: true })
+      }));
     }
 
     await Promise.all(tasks);
@@ -164,8 +184,16 @@ async function handleGetLocation(userKey) {
 
 async function handleOwnerConfirmAction(request, userKey) {
   const body = await request.json();
+  const lang = body.lang || 'zh-CN';
+  const ownerNames = {
+    'zh-CN': '车主位置',
+    'zh-TW': '車主位置',
+    'en': 'Owner Location'
+  };
+  const ownerName = ownerNames[lang] || ownerNames['zh-CN'];
+
   if (body.location) {
-    const urls = generateMapUrls(body.location.lat, body.location.lng);
+    const urls = generateMapUrls(body.location.lat, body.location.lng, ownerName);
     await MOVE_CAR_STATUS.put("owner_loc_" + userKey, JSON.stringify({ ...body.location, ...urls }), { expirationTtl: 600 });
   }
   await MOVE_CAR_STATUS.put("status_" + userKey, 'confirmed', { expirationTtl: 600 });
@@ -176,7 +204,7 @@ async function handleOwnerConfirmAction(request, userKey) {
 function renderMainPage(origin, userKey) {
   const phone = getUserConfig(userKey, 'PHONE_NUMBER') || '';
   const carTitle = getUserConfig(userKey, 'CAR_TITLE') || '车主';
-  const phoneHtml = phone ? '<a href="tel:' + phone + '" class="btn-phone">📞 拨打车主电话</a>' : '';
+  const phoneHtml = phone ? `<a href="tel:${phone}" class="btn-phone" id="btnPhone">📞 拨打车主电话</a>` : '';
 
   return new Response(`
 <!DOCTYPE html>
@@ -208,53 +236,111 @@ function renderMainPage(origin, userKey) {
   <div class="container" id="mainView">
     <div class="card header">
       <div class="icon-wrap">🚗</div>
-      <h1>呼叫车主挪车</h1>
-      <p style="color:#666; margin-top:5px">联络对象：${carTitle}</p>
+      <h1 id="titleText">呼叫车主挪车</h1>
+      <p style="color:#666; margin-top:5px"><span id="contactText">联络对象：</span>${carTitle}</p>
     </div>
     <div class="card">
       <textarea id="msgInput" placeholder="留言给车主..."></textarea>
       <div class="tag-box">
-        <div class="tag" onclick="setTag('您的车挡住我了')">🚧 挡路</div>
-        <div class="tag" onclick="setTag('临时停靠一下')">⏱️ 临停</div>
-        <div class="tag" onclick="setTag('急事，麻烦尽快')">🙏 加急</div>
+        <div class="tag" onclick="setTag(langData.tag1)">🚧 <span id="tag1Text">挡路</span></div>
+        <div class="tag" onclick="setTag(langData.tag2)">⏱️ <span id="tag2Text">临停</span></div>
+        <div class="tag" onclick="setTag(langData.tag4)">📞 <span id="tag4Text">没接</span></div>
+        <div class="tag" onclick="setTag(langData.tag3)">🙏 <span id="tag3Text">加急</span></div>
       </div>
     </div>
     <div class="card" id="locStatus" style="font-size:14px; color:#666; text-align:center;">正在获取您的位置...</div>
-    <button id="notifyBtn" class="btn-main" onclick="sendNotify()">🔔 发送通知</button>
+    <button id="notifyBtn" class="btn-main" onclick="sendNotify()">🔔 <span id="btnNotifyText">发送通知</span></button>
   </div>
 
   <div class="container hidden" id="successView">
     <div class="card" style="text-align:center">
       <div style="font-size:60px; margin-bottom:15px">✅</div>
-      <h2 style="margin-bottom:8px">通知已发出</h2>
+      <h2 style="margin-bottom:8px" id="successTitle">通知已发出</h2>
       <p id="waitingText" style="color:#666">车主微信已收到提醒，请稍候</p>
     </div>
     <div id="ownerFeedback" class="card hidden" style="text-align:center">
       <div style="font-size:40px">🏃‍♂️</div>
-      <h3 style="color:#059669">车主正赶往现场</h3>
+      <h3 style="color:#059669" id="ownerComingText">车主正赶往现场</h3>
       <div class="map-links">
-        <a id="ownerAmap" href="#" class="map-btn amap">高德地图</a>
-        <a id="ownerApple" href="#" class="map-btn apple">苹果地图</a>
+        <a id="ownerAmap" href="#" class="map-btn amap" id="amapText">高德地图</a>
+        <a id="ownerApple" href="#" class="map-btn apple" id="appleText">苹果地图</a>
       </div>
     </div>
     <div>
-      <button class="btn-retry" onclick="location.reload()">再次通知</button>
+      <button class="btn-retry" onclick="location.reload()" id="btnRetryText">再次通知</button>
       ${phoneHtml}
     </div>
   </div>
 
   <script>
+    const i18n = {
+      'zh-CN': {
+        title: '呼叫车主挪车', contact: '联络对象：', placeholder: '留言给车主...',
+        tag1: '您的车挡住我了', tag1Label: '挡路', tag2: '临时停靠一下', tag2Label: '临停', tag3: '急事，麻烦尽快', tag3Label: '加急', tag4: '电话没接，麻烦挪车', tag4Label: '没接',
+        locGetting: '正在获取您的位置...', locSuccess: '📍 位置已锁定', locFail: '⚠️ 未能获取位置 (将延迟发送)',
+        btnNotify: '发送通知', btnSending: '发送中...', btnPhone: '📞 拨打车主电话',
+        successTitle: '通知已发出', waitingText: '车主已收到提醒，请稍候', ownerComing: '车主正赶往现场',
+        amap: '高德地图', apple: '苹果地图', btnRetry: '再次通知', alertSuccess: '发送成功', alertFail: '系统忙'
+      },
+      'zh-TW': {
+        title: '呼叫車主挪車', contact: '聯絡對象：', placeholder: '留言給車主...',
+        tag1: '您的車擋住我了', tag1Label: '擋路', tag2: '臨時停靠一下', tag2Label: '臨停', tag3: '急事，麻煩盡快', tag3Label: '加急', tag4: '電話沒接，麻煩挪車', tag4Label: '沒接',
+        locGetting: '正在獲取您的位置...', locSuccess: '📍 位置已鎖定', locFail: '⚠️ 未能獲取位置 (將延遲發送)',
+        btnNotify: '發送通知', btnSending: '發送中...', btnPhone: '📞 撥打車主電話',
+        successTitle: '通知已發出', waitingText: '車主已收到提醒，請稍候', ownerComing: '車主正趕往現場',
+        amap: '高德地圖', apple: '蘋果地圖', btnRetry: '再次通知', alertSuccess: '發送成功', alertFail: '系統忙'
+      },
+      'en': {
+        title: 'Move Car Request', contact: 'Contact: ', placeholder: 'Leave a message...',
+        tag1: 'Your car is blocking me', tag1Label: 'Blocking', tag2: 'Temporary parking', tag2Label: 'Temp Park', tag3: 'Urgent, please hurry', tag3Label: 'Urgent', tag4: 'No answer on phone, please move', tag4Label: 'No Answer',
+        locGetting: 'Getting your location...', locSuccess: '📍 Location locked', locFail: '⚠️ Failed to get location (Delayed)',
+        btnNotify: 'Send Notification', btnSending: 'Sending...', btnPhone: '📞 Call Owner',
+        successTitle: 'Notification Sent', waitingText: 'The owner has been notified, please wait.', ownerComing: 'Owner is on the way',
+        amap: 'Amap', apple: 'Apple Maps', btnRetry: 'Notify Again', alertSuccess: 'Success', alertFail: 'System busy'
+      }
+    };
+
+    let currentLang = navigator.language || navigator.userLanguage;
+    let langCode = 'en';
+    const lowerLang = currentLang.toLowerCase();
+    if (lowerLang.includes('tw') || lowerLang.includes('hk') || lowerLang.includes('mo') || lowerLang.includes('hant')) {
+      langCode = 'zh-TW';
+    } else if (lowerLang.startsWith('zh')) {
+      langCode = 'zh-CN';
+    }
+    
+    const langData = i18n[langCode];
+
     let userLoc = null;
     const userKey = "${userKey}";
     
     window.onload = () => {
+      // Apply translation
+      document.title = langData.title;
+      document.getElementById('titleText').innerText = langData.title;
+      document.getElementById('contactText').innerText = langData.contact;
+      document.getElementById('msgInput').placeholder = langData.placeholder;
+      document.getElementById('tag1Text').innerText = langData.tag1Label;
+      document.getElementById('tag2Text').innerText = langData.tag2Label;
+      document.getElementById('tag4Text').innerText = langData.tag4Label;
+      document.getElementById('tag3Text').innerText = langData.tag3Label;
+      document.getElementById('locStatus').innerText = langData.locGetting;
+      document.getElementById('btnNotifyText').innerText = langData.btnNotify;
+      document.getElementById('successTitle').innerText = langData.successTitle;
+      document.getElementById('waitingText').innerText = langData.waitingText;
+      document.getElementById('ownerComingText').innerText = langData.ownerComing;
+      document.getElementById('ownerAmap').innerText = langData.amap;
+      document.getElementById('ownerApple').innerText = langData.apple;
+      document.getElementById('btnRetryText').innerText = langData.btnRetry;
+      if (document.getElementById('btnPhone')) document.getElementById('btnPhone').innerText = langData.btnPhone;
+
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(p => {
           userLoc = { lat: p.coords.latitude, lng: p.coords.longitude };
-          document.getElementById('locStatus').innerText = '📍 位置已锁定';
+          document.getElementById('locStatus').innerText = langData.locSuccess;
           document.getElementById('locStatus').style.color = '#059669';
         }, () => {
-          document.getElementById('locStatus').innerText = '⚠️ 未能获取位置 (将延迟发送)';
+          document.getElementById('locStatus').innerText = langData.locFail;
         });
       }
     };
@@ -263,19 +349,19 @@ function renderMainPage(origin, userKey) {
 
     async function sendNotify() {
       const btn = document.getElementById('notifyBtn');
-      btn.disabled = true; btn.innerText = '发送中...';
+      btn.disabled = true; btn.innerHTML = '🔔 <span id="btnNotifyText">' + langData.btnSending + '</span>';
       try {
         const res = await fetch('/api/notify?u=' + userKey, {
           method: 'POST',
-          body: JSON.stringify({ message: document.getElementById('msgInput').value, location: userLoc, delayed: !userLoc })
+          body: JSON.stringify({ message: document.getElementById('msgInput').value, location: userLoc, delayed: !userLoc, lang: langCode })
         });
         const data = await res.json();
         if (data.success) {
           document.getElementById('mainView').classList.add('hidden');
           document.getElementById('successView').classList.remove('hidden');
           pollStatus();
-        } else { alert(data.error); btn.disabled = false; btn.innerText = '🔔 发送通知'; }
-      } catch(e) { alert('系统忙'); btn.disabled = false; }
+        } else { alert(data.error); btn.disabled = false; btn.innerHTML = '🔔 <span id="btnNotifyText">' + langData.btnNotify + '</span>'; }
+      } catch(e) { alert(langData.alertFail); btn.disabled = false; btn.innerHTML = '🔔 <span id="btnNotifyText">' + langData.btnNotify + '</span>'; }
     }
 
     function pollStatus() {
@@ -320,15 +406,47 @@ function renderOwnerPage(userKey) {
     <div style="font-size:45px">📢</div>
     <h2 style="margin:10px 0">${carTitle}</h2>
     <div id="mapArea" class="map-box">
-      <p style="font-size:14px; color:#1e40af; margin-bottom:10px">对方位置已送达 📍</p>
-      <a id="amapLink" href="#" class="map-btn">高德地图</a>
-      <a id="appleLink" href="#" class="map-btn" style="background:#000">苹果地图</a>
+      <p style="font-size:14px; color:#1e40af; margin-bottom:10px" id="locReceivedText">对方位置已送达 📍</p>
+      <a id="amapLink" href="#" class="map-btn" id="amapText">高德地图</a>
+      <a id="appleLink" href="#" class="map-btn" style="background:#000" id="appleText">苹果地图</a>
     </div>
-    <button id="confirmBtn" class="btn" onclick="confirmMove()">🚀 我已知晓，马上过去</button>
+    <button id="confirmBtn" class="btn" onclick="confirmMove()">🚀 <span id="btnConfirmText">我已知晓，马上过去</span></button>
   </div>
   <script>
+    const i18n = {
+      'zh-CN': {
+        title: '车主确认', locReceived: '对方位置已送达 📍', amap: '高德地图', apple: '苹果地图',
+        btnConfirm: '我已知晓，马上过去', btnConfirmed: '已同步给对方'
+      },
+      'zh-TW': {
+        title: '車主確認', locReceived: '對方位置已送達 📍', amap: '高德地圖', apple: '蘋果地圖',
+        btnConfirm: '我已知曉，馬上過去', btnConfirmed: '已同步給對方'
+      },
+      'en': {
+        title: 'Owner Confirmation', locReceived: 'Location received 📍', amap: 'Amap', apple: 'Apple Maps',
+        btnConfirm: 'Got it, on my way', btnConfirmed: 'Synced with requester'
+      }
+    };
+
+    let currentLang = navigator.language || navigator.userLanguage;
+    let langCode = 'en';
+    const lowerLang = currentLang.toLowerCase();
+    if (lowerLang.includes('tw') || lowerLang.includes('hk') || lowerLang.includes('mo') || lowerLang.includes('hant')) {
+      langCode = 'zh-TW';
+    } else if (lowerLang.startsWith('zh')) {
+      langCode = 'zh-CN';
+    }
+    
+    const langData = i18n[langCode];
+
     const userKey = "${userKey}";
     window.onload = async () => {
+      document.title = langData.title;
+      document.getElementById('locReceivedText').innerText = langData.locReceived;
+      document.getElementById('amapLink').innerText = langData.amap;
+      document.getElementById('appleLink').innerText = langData.apple;
+      document.getElementById('btnConfirmText').innerText = langData.btnConfirm;
+
       const res = await fetch('/api/get-location?u=' + userKey);
       const data = await res.json();
       if(data.amapUrl) {
@@ -339,13 +457,15 @@ function renderOwnerPage(userKey) {
     };
     async function confirmMove() {
       const btn = document.getElementById('confirmBtn');
-      btn.innerText = '已同步给对方'; btn.disabled = true;
+      btn.innerHTML = '🚀 <span id="btnConfirmText">' + langData.btnConfirmed + '</span>'; btn.disabled = true;
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async p => {
-          await fetch('/api/owner-confirm?u=' + userKey, { method: 'POST', body: JSON.stringify({ location: {lat: p.coords.latitude, lng: p.coords.longitude} }) });
+          await fetch('/api/owner-confirm?u=' + userKey, { method: 'POST', body: JSON.stringify({ location: {lat: p.coords.latitude, lng: p.coords.longitude}, lang: langCode }) });
         }, async () => {
-          await fetch('/api/owner-confirm?u=' + userKey, { method: 'POST', body: JSON.stringify({ location: null }) });
+          await fetch('/api/owner-confirm?u=' + userKey, { method: 'POST', body: JSON.stringify({ location: null, lang: langCode }) });
         });
+      } else {
+        await fetch('/api/owner-confirm?u=' + userKey, { method: 'POST', body: JSON.stringify({ location: null, lang: langCode }) });
       }
     }
   </script>
