@@ -1,6 +1,6 @@
 # MoveCar - 多用户智能挪车系统 (v2.0)
 
-基于 Cloudflare Workers 的智能挪车通知系统，扫码即可通知车主，保护双方隐私。**v2.0 版本现已支持单实例多用户并发使用。**
+基于 Cloudflare Workers 的智能挪车通知系统，扫码即可通知车主，保护双方隐私，新增Telegram，新增多语系简繁英自动匹配**v2.0 版本现已支持单实例多用户并发使用。**
 
 ## 🌐 界面预览
 
@@ -37,6 +37,9 @@
 - 零门槛，只需微信扫码关注即可接收通知。
 - 支持 HTML 格式，点击通知即可直接跳转到确认处理页面。
 
+### Telegram
+- 极致的安全与隐私
+- 支持高度自定义的机器人，因其在隐私保护和功能强大性上的兼顾，常被用于商务协作、社群运营和注重隐私的沟通。
 ---
 
 ## 🔄 使用流程
@@ -76,10 +79,12 @@
 #### 1. 默认全局变量 (可选)
 - `BARK_URL`：默认推送地址。
 - `PUSHPLUS_TOKEN`：默认微信令牌。
+- `TG_BOT_TOKEN`：填写获取的 Telegram Bot Token。
+- `TG_CHAT_ID`：填写获取的 Telegram Chat ID。
 
 #### 2. 用户专属变量 (强烈推荐)
 **格式：`变量名_用户ID` (ID需大写)**。例如你的 ID 是 `xiaowang`：
-- `PUSHPLUS_TOKEN_XIAOWANG`：该用户的专属令牌（如PushPlus或者Bark的TOKEN）。
+- `PUSHPLUS_TOKEN_XIAOWANG`：该用户的专属令牌（如PushPlus或者Bark或者Telegram的TOKEN）。
 - `CAR_TITLE_XIAOWANG`：显示的车辆/车主信息（如：粤B·88888）。
 - `EXTERNAL_URL`：填入你的反代备案域名（例如 https://xx.xxx.com）-（可选，注意：带上https，末尾不要带斜杠)
 - `PHONE_NUMBER_XIAOWANG`：该车主的备用电话-通知车主后没有回应的时候可以直接拨打电话（可选）。
