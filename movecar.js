@@ -202,9 +202,32 @@ async function handleOwnerConfirmAction(request, userKey) {
 
 /** 界面渲染：请求者页 **/
 function renderMainPage(origin, userKey) {
-  const phone = getUserConfig(userKey, 'PHONE_NUMBER') || '';
+  const phone1 = getUserConfig(userKey, 'PHONE_NUMBER') || getUserConfig(userKey, 'PHONE_NUMBER_1') || '';
+  const phone2 = getUserConfig(userKey, 'PHONE_NUMBER_2') || '';
+  const phone3 = getUserConfig(userKey, 'PHONE_NUMBER_3') || '';
+  const phones = [phone1, phone2, phone3].filter(Boolean);
   const carTitle = getUserConfig(userKey, 'CAR_TITLE') || '车主';
-  const phoneHtml = phone ? `<a href="tel:${phone}" class="btn-phone" id="btnPhone">📞 拨打车主电话</a>` : '';
+  
+  let phoneHtml = '';
+  let phoneModalHtml = '';
+
+  if (phones.length === 1) {
+    phoneHtml = `<a href="tel:${phones[0]}" class="btn-phone" id="btnPhone">📞 拨打车主电话</a>`;
+  } else if (phones.length > 1) {
+    phoneHtml = `<button onclick="document.getElementById('phoneModal').classList.remove('hidden')" class="btn-phone" id="btnPhone">📞 拨打车主电话</button>`;
+    
+    const phoneItems = phones.map((p, i) => `<a href="tel:${p}" class="phone-item">📞 ${p}</a>`).join('');
+    phoneModalHtml = `
+    <div id="phoneModal" class="modal hidden">
+      <div class="modal-content">
+        <h3 id="phoneModalTitle" style="margin-bottom: 15px; text-align: center;">请选择拨打的号码</h3>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          ${phoneItems}
+        </div>
+        <button onclick="document.getElementById('phoneModal').classList.add('hidden')" style="margin-top: 15px; width: 100%; padding: 12px; border-radius: 12px; border: none; background: #f1f5f9; color: #475569; font-weight: bold; font-size: 16px; cursor: pointer;" id="btnCancelPhone">取消</button>
+      </div>
+    </div>`;
+  }
 
   return new Response(`
 <!DOCTYPE html>
@@ -224,15 +247,31 @@ function renderMainPage(origin, userKey) {
     .tag-box { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; padding-bottom: 5px; }
     .tag { background: #f0f4f8; padding: 8px 16px; border-radius: 20px; font-size: 14px; white-space: nowrap; cursor: pointer; border: 1px solid #e1e8ed; }
     .btn-main { background: #0093E9; color: white; border: none; padding: 18px; border-radius: 18px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; }
-    .btn-phone { background: #ef4444; color: white; border: none; padding: 15px; border-radius: 15px; text-decoration: none; text-align: center; font-weight: bold; display: block; margin-top: 10px; }
-    .btn-retry { background: #f59e0b; color: white; padding: 15px; border-radius: 15px; text-align: center; font-weight: bold; display: block; margin-top: 10px; border: none; width: 100%; cursor: pointer; }
+    .btn-phone { background: #ef4444; color: white; border: none; padding: 15px; border-radius: 15px; text-decoration: none; text-align: center; font-weight: bold; display: block; margin-top: 10px; width: 100%; cursor: pointer; font-size: 16px; }
+    .btn-retry { background: #f59e0b; color: white; padding: 15px; border-radius: 15px; text-align: center; font-weight: bold; display: block; margin-top: 10px; border: none; width: 100%; cursor: pointer; font-size: 16px; }
     .hidden { display: none !important; }
     .map-links { display: flex; gap: 10px; margin-top: 15px; }
     .map-btn { flex: 1; padding: 12px; border-radius: 12px; text-align: center; text-decoration: none; color: white; font-size: 14px; font-weight: bold; }
     .amap { background: #1890ff; } .apple { background: #000; }
+    .wx-mask { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; flex-direction: column; align-items: flex-end; padding: 20px; color: white; font-size: 18px; line-height: 1.5; }
+    .wx-mask-hidden { display: none !important; }
+    .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 20px; }
+    .modal-content { background: white; width: 100%; max-width: 320px; border-radius: 20px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .phone-item { display: block; width: 100%; padding: 15px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; text-align: center; text-decoration: none; color: #0f172a; font-weight: bold; font-size: 16px; }
   </style>
 </head>
 <body>
+  <div id="wxMask" class="wx-mask wx-mask-hidden">
+    <div style="text-align: right; width: 100%; padding-right: 10px;">
+      <span style="font-size: 50px;">↗️</span>
+    </div>
+    <div style="margin-top: 20px; text-align: center; width: 100%;">
+      <p id="wxMaskText1" style="font-size: 22px; font-weight: bold; margin-bottom: 10px;">请点击右上角 ···</p>
+      <p id="wxMaskText2">选择在<span style="color:#0093E9;font-weight:bold;">浏览器</span>中打开</p>
+      <p id="wxMaskText3" style="font-size: 14px; margin-top: 20px; color: #ccc;">(安卓微信无法获取定位，请在外部浏览器使用)</p>
+    </div>
+  </div>
+
   <div class="container" id="mainView">
     <div class="card header">
       <div class="icon-wrap">🚗</div>
@@ -259,7 +298,7 @@ function renderMainPage(origin, userKey) {
       <p id="waitingText" style="color:#666">车主微信已收到提醒，请稍候</p>
     </div>
     <div id="ownerFeedback" class="card hidden" style="text-align:center">
-      <div style="font-size:40px">🏃‍♂️</div>
+      <div style="font-size:40px">🏃♂️</div>
       <h3 style="color:#059669" id="ownerComingText">车主正赶往现场</h3>
       <div class="map-links">
         <a id="ownerAmap" href="#" class="map-btn amap" id="amapText">高德地图</a>
@@ -272,6 +311,8 @@ function renderMainPage(origin, userKey) {
     </div>
   </div>
 
+  ${phoneModalHtml}
+
   <script>
     const i18n = {
       'zh-CN': {
@@ -280,7 +321,9 @@ function renderMainPage(origin, userKey) {
         locGetting: '正在获取您的位置...', locSuccess: '📍 位置已锁定', locFail: '⚠️ 未能获取位置 (将延迟发送)',
         btnNotify: '发送通知', btnSending: '发送中...', btnPhone: '📞 拨打车主电话',
         successTitle: '通知已发出', waitingText: '车主已收到提醒，请稍候', ownerComing: '车主正赶往现场',
-        amap: '高德地图', apple: '苹果地图', btnRetry: '再次通知', alertSuccess: '发送成功', alertFail: '系统忙'
+        amap: '高德地图', apple: '苹果地图', btnRetry: '再次通知', alertSuccess: '发送成功', alertFail: '系统忙',
+        wxMask1: '请点击右上角 ···', wxMask2: '选择在浏览器中打开', wxMask3: '(安卓微信无法获取定位，请在外部浏览器使用)<br><br>💡 提示：允许位置能更快通知车主',
+        phoneSelect: '请选择拨打的号码', cancel: '取消'
       },
       'zh-TW': {
         title: '呼叫車主挪車', contact: '聯絡對象：', placeholder: '留言給車主...',
@@ -288,7 +331,9 @@ function renderMainPage(origin, userKey) {
         locGetting: '正在獲取您的位置...', locSuccess: '📍 位置已鎖定', locFail: '⚠️ 未能獲取位置 (將延遲發送)',
         btnNotify: '發送通知', btnSending: '發送中...', btnPhone: '📞 撥打車主電話',
         successTitle: '通知已發出', waitingText: '車主已收到提醒，請稍候', ownerComing: '車主正趕往現場',
-        amap: '高德地圖', apple: '蘋果地圖', btnRetry: '再次通知', alertSuccess: '發送成功', alertFail: '系統忙'
+        amap: '高德地圖', apple: '蘋果地圖', btnRetry: '再次通知', alertSuccess: '發送成功', alertFail: '系統忙',
+        wxMask1: '請點擊右上角 ···', wxMask2: '選擇在瀏覽器中開啟', wxMask3: '(安卓微信無法獲取定位，請在外部瀏覽器使用)<br><br>💡 提示：允許位置能更快通知車主',
+        phoneSelect: '請選擇撥打的號碼', cancel: '取消'
       },
       'en': {
         title: 'Move Car Request', contact: 'Contact: ', placeholder: 'Leave a message...',
@@ -296,13 +341,21 @@ function renderMainPage(origin, userKey) {
         locGetting: 'Getting your location...', locSuccess: '📍 Location locked', locFail: '⚠️ Failed to get location (Delayed)',
         btnNotify: 'Send Notification', btnSending: 'Sending...', btnPhone: '📞 Call Owner',
         successTitle: 'Notification Sent', waitingText: 'The owner has been notified, please wait.', ownerComing: 'Owner is on the way',
-        amap: 'Amap', apple: 'Apple Maps', btnRetry: 'Notify Again', alertSuccess: 'Success', alertFail: 'System busy'
+        amap: 'Amap', apple: 'Apple Maps', btnRetry: 'Notify Again', alertSuccess: 'Success', alertFail: 'System busy',
+        wxMask1: 'Click the top right corner ···', wxMask2: 'Select "Open in Browser"', wxMask3: '(Location access is restricted in Android WeChat)<br><br>💡 Tip: Allowing location helps notify the owner faster',
+        phoneSelect: 'Select a number to call', cancel: 'Cancel'
       }
     };
 
     let currentLang = navigator.language || navigator.userLanguage;
+    const ua = navigator.userAgent || '';
+    const wxLangMatch = ua.match(/Language\\/([a-zA-Z_-]+)/i);
+    if (wxLangMatch) {
+      currentLang = wxLangMatch[1].replace('_', '-');
+    }
+
     let langCode = 'en';
-    const lowerLang = currentLang.toLowerCase();
+    const lowerLang = (currentLang || 'en').toLowerCase();
     if (lowerLang.includes('tw') || lowerLang.includes('hk') || lowerLang.includes('mo') || lowerLang.includes('hant')) {
       langCode = 'zh-TW';
     } else if (lowerLang.startsWith('zh')) {
@@ -315,24 +368,45 @@ function renderMainPage(origin, userKey) {
     const userKey = "${userKey}";
     
     window.onload = () => {
-      // Apply translation
+      // Apply translation safely
       document.title = langData.title;
-      document.getElementById('titleText').innerText = langData.title;
-      document.getElementById('contactText').innerText = langData.contact;
-      document.getElementById('msgInput').placeholder = langData.placeholder;
-      document.getElementById('tag1Text').innerText = langData.tag1Label;
-      document.getElementById('tag2Text').innerText = langData.tag2Label;
-      document.getElementById('tag4Text').innerText = langData.tag4Label;
-      document.getElementById('tag3Text').innerText = langData.tag3Label;
-      document.getElementById('locStatus').innerText = langData.locGetting;
-      document.getElementById('btnNotifyText').innerText = langData.btnNotify;
-      document.getElementById('successTitle').innerText = langData.successTitle;
-      document.getElementById('waitingText').innerText = langData.waitingText;
-      document.getElementById('ownerComingText').innerText = langData.ownerComing;
-      document.getElementById('ownerAmap').innerText = langData.amap;
-      document.getElementById('ownerApple').innerText = langData.apple;
-      document.getElementById('btnRetryText').innerText = langData.btnRetry;
-      if (document.getElementById('btnPhone')) document.getElementById('btnPhone').innerText = langData.btnPhone;
+      const setTxt = (id, txt) => { const el = document.getElementById(id); if (el) el.innerText = txt; };
+      const setHtml = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+      
+      setTxt('titleText', langData.title);
+      setTxt('contactText', langData.contact);
+      const msgInput = document.getElementById('msgInput');
+      if (msgInput) msgInput.placeholder = langData.placeholder;
+      
+      setTxt('tag1Text', langData.tag1Label);
+      setTxt('tag2Text', langData.tag2Label);
+      setTxt('tag4Text', langData.tag4Label);
+      setTxt('tag3Text', langData.tag3Label);
+      setTxt('locStatus', langData.locGetting);
+      setTxt('btnNotifyText', langData.btnNotify);
+      setTxt('successTitle', langData.successTitle);
+      setTxt('waitingText', langData.waitingText);
+      setTxt('ownerComingText', langData.ownerComing);
+      setTxt('ownerAmap', langData.amap);
+      setTxt('ownerApple', langData.apple);
+      setTxt('btnRetryText', langData.btnRetry);
+      setTxt('btnPhone', langData.btnPhone);
+      setTxt('phoneModalTitle', langData.phoneSelect);
+      setTxt('btnCancelPhone', langData.cancel);
+      
+      setTxt('wxMaskText1', langData.wxMask1);
+      setHtml('wxMaskText2', langData.wxMask2 ? langData.wxMask2.replace('浏览器', '<span style="color:#0093E9;font-weight:bold;">浏览器</span>').replace('瀏覽器', '<span style="color:#0093E9;font-weight:bold;">瀏覽器</span>').replace('Browser', '<span style="color:#0093E9;font-weight:bold;">Browser</span>') : '');
+      setHtml('wxMaskText3', langData.wxMask3);
+
+      const isWechat = /MicroMessenger/i.test(ua);
+      const isAndroid = /Android/i.test(ua);
+      if (isWechat && isAndroid) {
+        const mask = document.getElementById('wxMask');
+        const main = document.getElementById('mainView');
+        if (mask) mask.classList.remove('wx-mask-hidden');
+        if (main) main.style.display = 'none';
+        return; // Stop further execution if in Android WeChat
+      }
 
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(p => {
@@ -430,7 +504,7 @@ function renderOwnerPage(userKey) {
 
     let currentLang = navigator.language || navigator.userLanguage;
     let langCode = 'en';
-    const lowerLang = currentLang.toLowerCase();
+    const lowerLang = (currentLang || 'en').toLowerCase();
     if (lowerLang.includes('tw') || lowerLang.includes('hk') || lowerLang.includes('mo') || lowerLang.includes('hant')) {
       langCode = 'zh-TW';
     } else if (lowerLang.startsWith('zh')) {
