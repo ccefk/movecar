@@ -121,12 +121,12 @@ async function handleNotify(request, url, userKey) {
     };
     const t = backendI18n[lang] || backendI18n['zh-CN'];
 
-    let notifyText = "🚗 " + t.req + "【" + carTitle + "】\\n💬 " + t.msg + ": " + message;
+    let notifyText = "🚗 " + t.req + "【" + carTitle + "】\n💬 " + t.msg + ": " + message;
     
     // 隔离存储位置
     if (location && location.lat) {
       const maps = generateMapUrls(location.lat, location.lng, t.requesterName);
-      notifyText += "\\n📍 " + t.loc;
+      notifyText += "\n📍 " + t.loc;
       await MOVE_CAR_STATUS.put("loc_" + userKey, JSON.stringify({ ...location, ...maps }), { expirationTtl: CONFIG.KV_TTL });
     }
 
@@ -140,7 +140,7 @@ async function handleNotify(request, url, userKey) {
     if (delayed) await new Promise(r => setTimeout(r, 30000));
 
     const tasks = [];
-    const htmlMsg = notifyText.replace(/\\n/g, '<br>') + '<br><br><a href="' + confirmUrl + '" style="font-weight:bold;color:#0093E9;font-size:18px;">【' + t.confirm + '】</a>';
+    const htmlMsg = notifyText.replace(/\n/g, '<br>') + '<br><br><a href="' + confirmUrl + '" style="font-weight:bold;color:#0093E9;font-size:18px;">【' + t.confirm + '】</a>';
 
     if (ppToken) {
       tasks.push(fetch('http://www.pushplus.plus/send', {
@@ -150,7 +150,9 @@ async function handleNotify(request, url, userKey) {
       }));
     }
     if (barkUrl) {
-      tasks.push(fetch(barkUrl + "/" + encodeURIComponent(t.req) + "/" + encodeURIComponent(notifyText) + "?url=" + encodeURIComponent(confirmUrl)));
+      let finalBarkUrl = barkUrl.startsWith('http') ? barkUrl : 'https://api.day.app/' + barkUrl;
+      finalBarkUrl = finalBarkUrl.replace(/\/$/, "");
+      tasks.push(fetch(finalBarkUrl + "/" + encodeURIComponent(t.req) + "/" + encodeURIComponent(notifyText) + "?url=" + encodeURIComponent(confirmUrl)));
     }
     if (tgToken && tgChatId) {
       const tgMsg = "🚗 <b>" + t.req + "：" + carTitle + "</b>\n💬 " + t.msg + ": " + message + (location ? "\n📍 " + t.loc : "") + "\n<a href=\"" + confirmUrl + "\">【" + t.confirm + "】</a>";
