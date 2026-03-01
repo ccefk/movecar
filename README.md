@@ -77,7 +77,7 @@
 在 Worker 的「Settings」 -> 「Variables and Secrets」中添加：
 
 #### 1. 默认全局变量 (可选)
-- `BARK_URL`：默认推送地址。(复制的时候，请确保链接最后面不要带斜线 /。如 https://api.day.app/YOUR_KEY。)
+- `BARK_URL`：默认推送地址。(复制的时候，请确保链接最后面不要带斜线 /。如 https://api.day.app/YOUR_KEY)
 - `PUSHPLUS_TOKEN`：默认微信令牌。
 - `TG_BOT_TOKEN`：填写获取的 Telegram Bot Token。
 - `TG_CHAT_ID`：填写获取的 Telegram Chat ID。
