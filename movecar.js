@@ -99,7 +99,6 @@ async function handleNotify(request, url, userKey) {
     if (isLocked) throw new Error('发送太频繁，请一分钟后再试');
 
     const body = await request.json();
-    const message = body.message || '车旁有人等待';
     const location = body.location || null;
     const delayed = body.delayed || false;
     const lang = body.lang || 'zh-CN';
@@ -115,11 +114,13 @@ async function handleNotify(request, url, userKey) {
     const confirmUrl = baseDomain + "/owner-confirm?u=" + userKey;
 
     const backendI18n = {
-      'zh-CN': { req: '挪车请求', msg: '留言', loc: '已附带对方位置', confirm: '点击确认前往', requesterName: '扫码者位置' },
-      'zh-TW': { req: '挪車請求', msg: '留言', loc: '已附帶對方位置', confirm: '點擊確認前往', requesterName: '掃碼者位置' },
-      'en': { req: 'Move Car Request', msg: 'Message', loc: 'Location attached', confirm: 'Click to confirm', requesterName: 'Requester Location' }
+      'zh-CN': { req: '挪车请求', msg: '留言', loc: '已附带对方位置', confirm: '点击确认前往', requesterName: '扫码者位置', defaultMsg: '车旁有人等待' },
+      'zh-TW': { req: '挪車請求', msg: '留言', loc: '已附帶對方位置', confirm: '點擊確認前往', requesterName: '掃碼者位置', defaultMsg: '車旁有人等待' },
+      'en': { req: 'Move Car Request', msg: 'Message', loc: 'Location attached', confirm: 'Click to confirm', requesterName: 'Requester Location', defaultMsg: 'Someone is waiting by the car' }
     };
     const t = backendI18n[lang] || backendI18n['zh-CN'];
+    
+    const message = body.message || t.defaultMsg;
 
     let notifyText = "🚗 " + t.req + "【" + carTitle + "】\n💬 " + t.msg + ": " + message;
     
